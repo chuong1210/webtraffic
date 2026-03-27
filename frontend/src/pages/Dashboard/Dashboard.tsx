@@ -10,9 +10,20 @@ import { RoiDrawer, RoiCanvasOverlay } from '../../components/RoiDrawer';
 import type { RoiPoint } from '../../components/RoiDrawer';
 import { ModelUploader } from '../../components/ModelUploader';
 import { CounterPanel } from '../../components/CounterPanel';
+import { CameraWall } from '../../components/CameraWall/CameraWall';
+import { TrafficLightPanel } from '../../components/TrafficLight';
 import { modelApi, detectionApi, streamApi } from '../../services/api';
 import type { DeviceInfo } from '../../services/api';
 import type { ModelInfo, Settings, Toast } from '../../types/detection';
+
+// ── Camera presets (control room) ─────────────────────────────────────────────
+const CAMERA_PRESETS = [
+  { id: 'cam-1201', label: 'Camera 12 – Cổng chính',   location: 'KCN DD', url: 'rtsp://hctech:Admin@789@kcndd.cameraddns.net:554/Streaming/channels/1201' },
+  { id: 'cam-601',  label: 'Camera 6 – Cổng phụ',      location: 'KCN DD', url: 'rtsp://hctech:Admin@789@kcndd.cameraddns.net:554/Streaming/channels/601' },
+  { id: 'cam-401',  label: 'Camera 4 – Nội khu A',     location: 'KCN DD', url: 'rtsp://hctech:Admin@789@kcndd.cameraddns.net:554/Streaming/channels/401' },
+  { id: 'cam-101',  label: 'Camera 1 – Ngã tư trung tâm', location: 'KCN DD', url: 'rtsp://hctech:Admin@789@kcndd.cameraddns.net:554/Streaming/channels/101' },
+  { id: 'cam-2701', label: 'Camera 27 – Đường vòng',   location: 'KCN DD', url: 'rtsp://hctech:Admin@789@kcndd.cameraddns.net:554/Streaming/channels/2701' },
+] as const;
 
 // ── Toast helper ──────────────────────────────────────────────────────────────
 let toastId = 0;
@@ -245,23 +256,6 @@ export function Dashboard() {
         </div>
       </header>
 
-      {/* ── Congestion Alert Banner ─────────────────────────────────────────── */}
-      {congestion && congestion.is_congested && (
-        <div className={`flex items-center gap-3 px-5 py-2.5 text-sm font-semibold animate-pulse ${
-          congestion.level === 'critical'
-            ? 'bg-red-600 text-white'
-            : 'bg-amber-500 text-white'
-        }`}>
-          <span className="text-lg">{congestion.level === 'critical' ? '🚨' : '⚠️'}</span>
-          <span className="flex-1">
-            {congestion.level === 'critical' ? 'KET XE NGHIEM TRONG' : 'MAT DO CAO'}{' '}
-            — {congestion.vehicle_count} phuong tien (nguong: {congestion.threshold}) trong {congestion.duration_seconds.toFixed(0)}s
-          </span>
-          <span className="text-xs opacity-80">
-            {congestion.level === 'critical' ? 'CRITICAL' : 'WARNING'}
-          </span>
-        </div>
-      )}
 
       {/* ── Body ───────────────────────────────────────────────────────────── */}
       <div className="flex flex-1 min-h-0">
@@ -279,31 +273,48 @@ export function Dashboard() {
             />
           </SideCard>
 
-          {/* Stream */}
-          <SideCard title="RTSP / Video Stream" icon="📡">
-            <div className="flex flex-col gap-2">
-              <input
-                type="text"
-                value={streamUrl}
-                onChange={(e) => setStreamUrl(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleConnect()}
-                placeholder="RTSP, link YouTube, hoac C:/path/video.mp4"
-                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 outline-none focus:border-accent focus:ring-1 focus:ring-accent/30 transition-colors"
+          {/* Camera Wall + Stream controls */}
+          <SideCard title="Camera / Stream" icon="📡">
+            <div className="flex flex-col gap-3">
+
+              {/* Camera wall grid with live thumbnails */}
+              <CameraWall
+                cameras={CAMERA_PRESETS}
+                selectedUrl={streamUrl}
+                activeUrl={streamUrl}
+                onSelect={setStreamUrl}
+                onConnect={(url) => { setStreamUrl(url); setTimeout(handleConnect, 50); }}
+                streamOn={streamOn}
+                connecting={connecting}
               />
+
+              {/* Manual URL */}
+              <div className="flex flex-col gap-1">
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Hoặc nhập URL thủ công</p>
+                <input
+                  type="text"
+                  value={streamUrl}
+                  onChange={(e) => setStreamUrl(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleConnect()}
+                  placeholder="rtsp://... hoặc C:/path/video.mp4"
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 outline-none focus:border-accent focus:ring-1 focus:ring-accent/30 transition-colors"
+                />
+              </div>
+
               <div className="flex gap-2">
                 <button
                   onClick={handleConnect}
                   disabled={connecting || streamOn}
                   className="flex-1 py-2 text-xs font-bold rounded-lg bg-accent text-white disabled:opacity-40 hover:bg-blue-700 transition-all"
                 >
-                  {connecting ? 'Connecting...' : 'Connect'}
+                  {connecting ? 'Connecting...' : '▶ Connect'}
                 </button>
                 <button
                   onClick={handleDisconnect}
                   disabled={!streamOn}
                   className="flex-1 py-2 text-xs font-semibold rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100 disabled:opacity-30 transition-all"
                 >
-                  Stop
+                  ■ Stop
                 </button>
               </div>
             </div>
@@ -436,6 +447,7 @@ export function Dashboard() {
                 detections={detections}
                 stats={statsForView}
                 showLine={countingEnabled}
+                congestion={congestion}
               />
               <RoiCanvasOverlay
                 points={roiPoints}
@@ -482,6 +494,11 @@ export function Dashboard() {
               onReset={resetCount}
               onExport={handleExport}
             />
+
+            {/* Traffic Light Optimization */}
+            <div className="mt-3">
+              <TrafficLightPanel />
+            </div>
           </aside>
 
         </main>

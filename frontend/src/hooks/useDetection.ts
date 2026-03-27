@@ -57,11 +57,12 @@ export function useDetection() {
     }
   }, []);
 
-  // Poll latest frame while stream is active
+  // Adaptive frame poll: fire next request immediately after previous one completes.
+  // This avoids request pile-up from fixed setInterval when server is slow.
   useEffect(() => {
     if (!streamActive) {
       if (frameTimerRef.current) {
-        clearInterval(frameTimerRef.current);
+        clearTimeout(frameTimerRef.current);
         frameTimerRef.current = undefined;
       }
       setCurrentFrame(null);
@@ -69,27 +70,27 @@ export function useDetection() {
       return;
     }
 
-    let fetching = false;
+    let cancelled = false;
     let emptyCount = 0;
-    frameTimerRef.current = setInterval(async () => {
-      if (fetching) return;
-      fetching = true;
+
+    const poll = async () => {
+      if (cancelled) return;
       try {
         const payload = await streamApi.getFrame();
 
-        // Backend returns frame:null when worker has stopped
         if (!payload || !payload.frame) {
           emptyCount++;
-          // If 20 consecutive empty responses (~5s), stream is dead
           if (emptyCount > 20) {
             console.warn('[useDetection] stream appears dead, stopping poll');
             setStreamActive(false);
+            return;
           }
+          // No frame yet — wait 200ms before retry
+          if (!cancelled) frameTimerRef.current = setTimeout(poll, 200);
           return;
         }
         emptyCount = 0;
 
-        // Also check if backend says stream is no longer active
         if (payload.stats && !payload.stats.stream_active) {
           console.warn('[useDetection] backend reports stream inactive');
           setStreamActive(false);
@@ -101,14 +102,20 @@ export function useDetection() {
         setStats(payload.stats);
       } catch (err) {
         console.error('[useDetection] frame poll error:', err);
-      } finally {
-        fetching = false;
+        // Back-off on error
+        if (!cancelled) frameTimerRef.current = setTimeout(poll, 500);
+        return;
       }
-    }, 250);
+      // Fire immediately after response — no artificial delay
+      if (!cancelled) frameTimerRef.current = setTimeout(poll, 0);
+    };
+
+    poll();
 
     return () => {
+      cancelled = true;
       if (frameTimerRef.current) {
-        clearInterval(frameTimerRef.current);
+        clearTimeout(frameTimerRef.current);
         frameTimerRef.current = undefined;
       }
     };
