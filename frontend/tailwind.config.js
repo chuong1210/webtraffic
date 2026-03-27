@@ -19,12 +19,10 @@ export default {
         mono: ['JetBrains Mono', 'monospace'],
       },
       animation: {
-        'pulse-slow':   'pulse 2s cubic-bezier(0.4,0,0.6,1) infinite',
-        'scan':         'scan 4s linear infinite',
-        'slideIn':      'slideIn 0.3s ease',
-        'toastIn':      'toastIn 0.35s cubic-bezier(0.34,1.56,0.64,1)',
-        'bounce-slow':  'bounceSlow 2.5s ease-in-out infinite',
-        'float':        'float 3s ease-in-out infinite',
+        'pulse-slow': 'pulse 2s cubic-bezier(0.4,0,0.6,1) infinite',
+        'scan':       'scan 4s linear infinite',
+        'slideIn':    'slideIn 0.3s ease',
+        'toastIn':    'toastIn 0.35s cubic-bezier(0.34,1.56,0.64,1)',
       },
       keyframes: {
         scan: {
@@ -38,14 +36,6 @@ export default {
         toastIn: {
           from: { opacity: '0', transform: 'translateX(40px) scale(0.9)' },
           to:   { opacity: '1', transform: 'translateX(0) scale(1)' },
-        },
-        bounceSlow: {
-          '0%, 100%': { transform: 'translateX(-50%) translateY(0px)' },
-          '50%':      { transform: 'translateX(-50%) translateY(-8px)' },
-        },
-        float: {
-          '0%, 100%': { transform: 'translateX(-50%) translateY(0px)' },
-          '50%':      { transform: 'translateX(-50%) translateY(-6px)' },
         },
       },
     },

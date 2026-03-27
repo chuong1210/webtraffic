@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useRef, useCallback } from 'react';
-import type { Detection, VehicleStats, CongestionInfo } from '../../types/detection';
+import type { Detection, VehicleStats } from '../../types/detection';
 import { drawDetections, drawCountingLine } from '../../utils/canvas';
 
 interface Props {
@@ -12,10 +12,9 @@ interface Props {
   detections: Detection[];
   stats: VehicleStats;
   showLine?: boolean;
-  congestion?: CongestionInfo | null;
 }
 
-export function VideoPlayer({ frame, detections, stats, showLine = true, congestion }: Props) {
+export function VideoPlayer({ frame, detections, stats, showLine = true }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef    = useRef<HTMLImageElement | null>(null);
   const prevSrcRef = useRef<string>('');
@@ -100,28 +99,6 @@ export function VideoPlayer({ frame, detections, stats, showLine = true, congest
         <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-red-600 text-white text-[11px] font-bold px-2.5 py-1 rounded-full z-10 shadow">
           <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
           LIVE
-        </div>
-      )}
-
-      {/* Congestion alert — floating over video */}
-      {frame && congestion && congestion.is_congested && (
-        <div className={`absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2.5 px-4 py-2.5 rounded-2xl shadow-2xl backdrop-blur-sm border animate-bounce-slow select-none pointer-events-none ${
-          congestion.level === 'critical'
-            ? 'bg-red-600/90 border-red-400 text-white'
-            : 'bg-amber-500/90 border-amber-300 text-white'
-        }`}>
-          <span className="text-xl leading-none">
-            {congestion.level === 'critical' ? '🚨' : '⚠️'}
-          </span>
-          <div className="flex flex-col leading-tight">
-            <span className="text-[13px] font-extrabold tracking-wide">
-              {congestion.level === 'critical' ? 'KẸT XE NGHIÊM TRỌNG' : 'MẬT ĐỘ CAO'}
-            </span>
-            <span className="text-[11px] font-medium opacity-90">
-              {congestion.vehicle_count} xe · ngưỡng {congestion.threshold} · {Math.round(congestion.duration_seconds)}s
-            </span>
-          </div>
-          <span className="ml-1 w-2 h-2 rounded-full shrink-0 animate-pulse bg-white" />
         </div>
       )}
       <canvas

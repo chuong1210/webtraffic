@@ -322,33 +322,26 @@ class StreamService:
                     level=cong_state.level,
                 )
 
-                # 5. Build detection list (plain dicts — skip Pydantic overhead)
+                # 5. Build payload
+                from app.models.detection_model import Detection, BoundingBox
+
                 api_dets = [
-                    {
-                        "bbox": {"x1": d.x1, "y1": d.y1, "x2": d.x2, "y2": d.y2},
-                        "class_name": d.class_name,
-                        "confidence": d.confidence,
-                        "track_id": d.track_id,
-                    }
+                    Detection(
+                        bbox=BoundingBox(x1=d.x1, y1=d.y1, x2=d.x2, y2=d.y2),
+                        class_name=d.class_name,
+                        confidence=d.confidence,
+                        track_id=d.track_id,
+                    )
                     for d in raw_dets
                 ]
 
-                # 6. Encode frame — resize before encode to cut bandwidth & latency
-                # Downscale to max 960px wide (keeps detail, halves encode time vs 1080p)
-                fh, fw = frame.shape[:2]
-                if fw > 960:
-                    scale = 960 / fw
-                    encode_frame = cv2.resize(
-                        frame, (960, int(fh * scale)), interpolation=cv2.INTER_LINEAR
-                    )
-                else:
-                    encode_frame = frame
-                _, buf = cv2.imencode(".jpg", encode_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                # 6. Encode frame — quality 92 reduces blocking/grain artefacts
+                _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 92])
                 frame_b64 = base64.b64encode(buf.tobytes()).decode()
 
                 payload = {
                     "frame": frame_b64,
-                    "detections": api_dets,
+                    "detections": [d.model_dump() for d in api_dets],
                     "stats": self._stats.model_dump(),
                 }
 

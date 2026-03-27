@@ -11,8 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.logger import logger
-from app.api import model_routes, stream_routes, detection_routes
-from app.api import traffic_light_routes
+from app.api import model_routes, stream_routes, detection_routes, traffic_light_routes
 from app.services.model_service import model_service
 from app.ml.tracker import get_tracker
 

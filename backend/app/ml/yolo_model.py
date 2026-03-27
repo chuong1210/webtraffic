@@ -111,8 +111,6 @@ class YOLOModel:
             conf=conf,
             tracker=tracker,
             persist=persist,
-            imgsz=640,   # cap inference size — bigger = slower, no benefit past 640
-            half=True,   # FP16 on GPU → ~2x faster, minimal accuracy loss
         )[0]
         return self._parse_boxes(results)
 

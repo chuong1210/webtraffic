@@ -447,7 +447,6 @@ export function Dashboard() {
                 detections={detections}
                 stats={statsForView}
                 showLine={countingEnabled}
-                congestion={congestion}
               />
               <RoiCanvasOverlay
                 points={roiPoints}
@@ -458,6 +457,26 @@ export function Dashboard() {
                 onClear={handleClearRoi}
                 active={roiActive}
               />
+
+              {/* Congestion floating pill – bồng bềnh trên video */}
+              {congestion && congestion.is_congested && (
+                <div className={`
+                  absolute bottom-5 left-1/2 -translate-x-1/2 z-20
+                  flex items-center gap-2 px-4 py-2 rounded-full
+                  shadow-2xl border backdrop-blur-sm
+                  text-sm font-bold pointer-events-none select-none
+                  animate-bounce
+                  ${congestion.level === 'critical'
+                    ? 'bg-red-600/90 border-red-400 text-white'
+                    : 'bg-amber-500/90 border-amber-300 text-white'}
+                `}>
+                  <span>{congestion.level === 'critical' ? '🚨' : '⚠️'}</span>
+                  <span>
+                    {congestion.level === 'critical' ? 'KẸT XE NGHIÊM TRỌNG' : 'MẬT ĐỘ CAO'}
+                    {' — '}{congestion.vehicle_count} xe / {congestion.duration_seconds.toFixed(0)}s
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Toolbar */}
@@ -483,9 +502,9 @@ export function Dashboard() {
             </div>
           </div>
 
-          {/* Stats panel */}
-          <aside className="w-64 shrink-0 border-l border-slate-200 overflow-y-auto p-3 bg-white">
-            <div className="flex items-center justify-between mb-3">
+          {/* Stats + Traffic Light panel (right sidebar) */}
+          <aside className="w-64 shrink-0 border-l border-slate-200 overflow-y-auto p-3 bg-white flex flex-col gap-3">
+            <div className="flex items-center justify-between">
               <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">Thong Ke</h2>
               <span className={`w-2 h-2 rounded-full ${streamOn ? 'bg-accent animate-pulse' : 'bg-slate-300'}`} />
             </div>
@@ -494,11 +513,8 @@ export function Dashboard() {
               onReset={resetCount}
               onExport={handleExport}
             />
-
-            {/* Traffic Light Optimization */}
-            <div className="mt-3">
-              <TrafficLightPanel />
-            </div>
+            <hr className="border-slate-100" />
+            <TrafficLightPanel />
           </aside>
 
         </main>
