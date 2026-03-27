@@ -1,0 +1,100 @@
+"""
+ML Layer – Tracking adapters.
+
+Two modes:
+  1. Built-in (default): Uses ultralytics model.track() with ByteTrack/BoT-SORT.
+     No external tracker needed — track IDs come directly from YOLO.
+  2. Legacy: SORT / DeepSORT via external packages (kept for compatibility).
+
+The stream_service uses BuiltinTracker by default.
+"""
+
+from __future__ import annotations
+from dataclasses import dataclass
+from typing import List, Any
+
+import numpy as np
+
+
+@dataclass
+class Track:
+    """A tracked object with stable ID."""
+    track_id: int
+    cx: float
+    cy: float
+    class_name: str
+    prev_cy: float = 0.0
+    age: int = 0
+    x1: float = 0.0
+    y1: float = 0.0
+    x2: float = 0.0
+    y2: float = 0.0
+    det_index: int | None = None
+
+
+class BuiltinTracker:
+    """
+    Uses ultralytics built-in tracking (ByteTrack / BoT-SORT).
+    No external dependencies needed — tracking happens inside model.track().
+    This adapter just converts RawDetection (with track_id) → Track objects.
+    """
+
+    def __init__(self, tracker_yaml: str = "bytetrack.yaml", **kwargs: Any) -> None:
+        self.tracker_yaml = tracker_yaml
+        self._id_to_prev_cy: dict[int, float] = {}
+
+    def update(self, detections: list, frame: np.ndarray | None = None) -> List[Track]:
+        """
+        Convert RawDetection list (already tracked by ultralytics) → Track list.
+        detections should come from yolo_model.track(), which populates track_id.
+        """
+        tracks = []
+        active_ids = set()
+
+        for i, d in enumerate(detections):
+            tid = d.track_id
+            if tid is None:
+                continue
+
+            active_ids.add(tid)
+            cx, cy = d.cx, d.cy
+            prev_cy = self._id_to_prev_cy.get(tid, cy)
+            self._id_to_prev_cy[tid] = cy
+
+            tracks.append(
+                Track(
+                    track_id=tid,
+                    cx=cx, cy=cy,
+                    class_name=d.class_name,
+                    prev_cy=prev_cy,
+                    x1=d.x1, y1=d.y1, x2=d.x2, y2=d.y2,
+                    det_index=i,
+                )
+            )
+
+        # Prune old IDs
+        for key in list(self._id_to_prev_cy.keys()):
+            if key not in active_ids:
+                self._id_to_prev_cy.pop(key, None)
+
+        return tracks
+
+    def reset(self) -> None:
+        self._id_to_prev_cy.clear()
+
+
+def get_tracker(tracker_type: str, **kwargs: Any) -> BuiltinTracker:
+    """
+    Factory: returns a tracker adapter.
+
+    tracker_type:
+      - "bytetrack" → ultralytics built-in ByteTrack (default)
+      - "botsort"   → ultralytics built-in BoT-SORT
+    """
+    t = (tracker_type or "bytetrack").strip().lower()
+    if t == "bytetrack":
+        return BuiltinTracker(tracker_yaml="bytetrack.yaml", **kwargs)
+    if t == "botsort":
+        return BuiltinTracker(tracker_yaml="botsort.yaml", **kwargs)
+    # Fallback to bytetrack
+    return BuiltinTracker(tracker_yaml="bytetrack.yaml", **kwargs)

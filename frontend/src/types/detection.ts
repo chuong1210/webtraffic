@@ -1,0 +1,100 @@
+// ── Detection Types ───────────────────────────────────────────────────────────
+
+export interface BoundingBox {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+export interface Detection {
+  bbox: BoundingBox;
+  class_name: string;
+  confidence: number;
+  track_id?: number;
+}
+
+export interface CongestionInfo {
+  is_congested: boolean;
+  vehicle_count: number;
+  threshold: number;
+  duration_seconds: number;
+  stable_duration: number;
+  message: string;
+  level: 'normal' | 'warning' | 'critical';
+}
+
+export interface VehicleStats {
+  total: number;
+  count_in: number;                // vehicles going IN  (top → bottom)
+  count_out: number;               // vehicles going OUT (bottom → top)
+  classes: Record<string, number>;
+  classes_in: Record<string, number>;
+  classes_out: Record<string, number>;
+  counting_mode: 'all' | 'direction';
+  fps: number;
+  frame_count: number;
+  stream_active: boolean;
+  model_loaded: boolean;
+  model_name: string;
+  roi_active: boolean;
+  conf_threshold: number;
+  line_position: number;
+  stream_error?: string;
+  congestion: CongestionInfo;
+}
+
+// ── WebSocket Payload ─────────────────────────────────────────────────────────
+
+export interface FramePayload {
+  frame: string;           // base64 JPEG
+  detections: Detection[];
+  stats: VehicleStats;
+}
+
+// ── API Types ─────────────────────────────────────────────────────────────────
+
+export interface ModelInfo {
+  name: string;
+  size_mb: number;
+  active: boolean;
+}
+
+export interface StreamStartRequest {
+  url: string;
+}
+
+export interface RoiPoint {
+  x: number;
+  y: number;
+}
+
+export interface RoiRequest {
+  points: number[][];   // [[x,y], ...]
+  active: boolean;
+}
+
+export interface Settings {
+  conf_threshold: number;
+  line_position: number;
+  max_fps: number;
+  tracker_type?: string;  // bytetrack | botsort
+  counting_mode?: 'all' | 'direction';
+  congestion_threshold?: number;
+  congestion_duration?: number;
+}
+
+export interface SuccessResponse {
+  success: boolean;
+  message: string;
+}
+
+// ── UI State ──────────────────────────────────────────────────────────────────
+
+export type ToastType = 'success' | 'error' | 'info' | 'warning';
+
+export interface Toast {
+  id: number;
+  message: string;
+  type: ToastType;
+}

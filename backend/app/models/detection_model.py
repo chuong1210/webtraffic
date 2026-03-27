@@ -1,0 +1,109 @@
+"""
+Pydantic data models for the Traffic Monitor API.
+Used for request/response validation and WebSocket payloads.
+"""
+
+from __future__ import annotations
+from pydantic import BaseModel, Field
+from typing import Optional
+
+
+# ── Detection Models ──────────────────────────────────────────────────────────
+
+class BoundingBox(BaseModel):
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+
+
+class Detection(BaseModel):
+    bbox: BoundingBox
+    class_name: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    track_id: Optional[int] = None
+
+
+class CongestionInfo(BaseModel):
+    """Congestion state sent to frontend."""
+    is_congested: bool = False
+    vehicle_count: int = 0
+    threshold: int = 10
+    duration_seconds: float = 0.0
+    stable_duration: float = 5.0
+    message: str = ""
+    level: str = "normal"  # normal | warning | critical
+
+
+class VehicleStats(BaseModel):
+    total: int = 0
+    count_in: int = 0               # vehicles going IN  (top → bottom)
+    count_out: int = 0              # vehicles going OUT (bottom → top)
+    classes: dict[str, int] = {}
+    classes_in: dict[str, int] = {}
+    classes_out: dict[str, int] = {}
+    counting_mode: str = "all"      # "all" | "direction"
+    fps: float = 0.0
+    frame_count: int = 0
+    stream_active: bool = False
+    model_loaded: bool = False
+    model_name: str = ""
+    roi_active: bool = False
+    conf_threshold: float = 0.35
+    line_position: float = 0.55
+    stream_error: str = ""
+    congestion: CongestionInfo = Field(default_factory=CongestionInfo)
+
+
+# ── WebSocket Payload ─────────────────────────────────────────────────────────
+
+class FramePayload(BaseModel):
+    """Payload sent over WebSocket for each processed frame."""
+    frame: str              # base64-encoded JPEG
+    detections: list[Detection] = []
+    stats: VehicleStats
+
+
+# ── Request Models ────────────────────────────────────────────────────────────
+
+class StreamStartRequest(BaseModel):
+    url: str = Field(..., description="RTSP URL or local video file path")
+
+
+class RoiRequest(BaseModel):
+    points: list[list[float]] = Field(
+        ..., description="List of [x, y] pixel coordinates"
+    )
+    active: bool = True
+
+
+class SettingsUpdate(BaseModel):
+    conf_threshold: Optional[float] = Field(None, ge=0.1, le=0.95)
+    line_position: Optional[float] = Field(None, ge=0.05, le=0.95)
+    max_fps: Optional[int] = Field(None, ge=1, le=60)
+    tracker_type: Optional[str] = Field(None, description="sort | deepsort | bytetrack")
+    counting_mode: Optional[str] = Field(None, description="all | direction")
+    congestion_threshold: Optional[int] = Field(None, ge=1, le=100)
+    congestion_duration: Optional[float] = Field(None, ge=1.0, le=120.0)
+
+
+class ModelLoadRequest(BaseModel):
+    name: str
+
+
+# ── Response Models ───────────────────────────────────────────────────────────
+
+class ModelInfo(BaseModel):
+    name: str
+    size_mb: float
+    active: bool
+
+
+class SuccessResponse(BaseModel):
+    success: bool
+    message: str = ""
+
+
+class ErrorResponse(BaseModel):
+    success: bool = False
+    error: str
