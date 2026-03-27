@@ -179,7 +179,18 @@ class StreamService:
     # ── Worker Thread ─────────────────────────────────────────────────────────
 
     def _worker(self, url: str) -> None:
-        cap = cv2.VideoCapture(url)
+        is_rtsp = str(url).lower().startswith("rtsp://")
+
+        # ── RTSP tuning: reduce buffering → less lag ───────────────────────────
+        if is_rtsp:
+            cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+            # Drop old buffered frames — key for live streams
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            # Request H.264 decode (avoid re-encode artifacts)
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'H264'))
+        else:
+            cap = cv2.VideoCapture(url)
+
         if not cap.isOpened():
             logger.error("StreamService: cannot open %s", url)
             self._last_error = f"Không mở được stream: {url}"
@@ -191,7 +202,6 @@ class StreamService:
         fps_cnt = 0
         t0 = time.time()
         frame_interval = 1.0 / max(self.max_fps, 1)
-        is_rtsp = str(url).lower().startswith("rtsp://")
         consecutive_failures = 0
         MAX_RTSP_RETRIES = 30      # ~3s of retries at 0.1s each
 
@@ -229,6 +239,19 @@ class StreamService:
                         frame = frame_retry
 
                 consecutive_failures = 0  # reset on success
+
+                # ── RTSP: grab extra frames to flush buffer lag ────────────────
+                # When processing is slower than camera FPS, old frames pile up.
+                # Grab (but don't decode) until buffer is nearly empty so we
+                # always process the freshest frame.
+                if is_rtsp:
+                    for _ in range(2):
+                        grabbed = cap.grab()
+                        if not grabbed:
+                            break
+                    ret2, fresh = cap.retrieve()
+                    if ret2 and fresh is not None:
+                        frame = fresh
 
                 self._stats.frame_count += 1
                 fps_cnt += 1
@@ -299,26 +322,33 @@ class StreamService:
                     level=cong_state.level,
                 )
 
-                # 5. Build payload
-                from app.models.detection_model import Detection, BoundingBox
-
+                # 5. Build detection list (plain dicts — skip Pydantic overhead)
                 api_dets = [
-                    Detection(
-                        bbox=BoundingBox(x1=d.x1, y1=d.y1, x2=d.x2, y2=d.y2),
-                        class_name=d.class_name,
-                        confidence=d.confidence,
-                        track_id=d.track_id,
-                    )
+                    {
+                        "bbox": {"x1": d.x1, "y1": d.y1, "x2": d.x2, "y2": d.y2},
+                        "class_name": d.class_name,
+                        "confidence": d.confidence,
+                        "track_id": d.track_id,
+                    }
                     for d in raw_dets
                 ]
 
-                # 6. Encode frame
-                _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                # 6. Encode frame — resize before encode to cut bandwidth & latency
+                # Downscale to max 960px wide (keeps detail, halves encode time vs 1080p)
+                fh, fw = frame.shape[:2]
+                if fw > 960:
+                    scale = 960 / fw
+                    encode_frame = cv2.resize(
+                        frame, (960, int(fh * scale)), interpolation=cv2.INTER_LINEAR
+                    )
+                else:
+                    encode_frame = frame
+                _, buf = cv2.imencode(".jpg", encode_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
                 frame_b64 = base64.b64encode(buf.tobytes()).decode()
 
                 payload = {
                     "frame": frame_b64,
-                    "detections": [d.model_dump() for d in api_dets],
+                    "detections": api_dets,
                     "stats": self._stats.model_dump(),
                 }
 

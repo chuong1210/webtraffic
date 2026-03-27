@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.logger import logger
 from app.api import model_routes, stream_routes, detection_routes
+from app.api import traffic_light_routes
 from app.services.model_service import model_service
 from app.ml.tracker import get_tracker
 
@@ -64,6 +65,7 @@ app.add_middleware(
 app.include_router(model_routes.router)
 app.include_router(stream_routes.router)
 app.include_router(detection_routes.router)
+app.include_router(traffic_light_routes.router)
 
 
 # ── Health check ──────────────────────────────────────────────────────────────

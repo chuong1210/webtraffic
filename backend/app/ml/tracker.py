@@ -58,7 +58,11 @@ class BuiltinTracker:
 
             active_ids.add(tid)
             cx, cy = d.cx, d.cy
-            prev_cy = self._id_to_prev_cy.get(tid, cy)
+            # Use sentinel -1.0 for new tracks so prev_cy != cy
+            # This avoids the lo==hi skip in VehicleCounter on first frame.
+            # A new track that appears above the line will have prev_cy=-1 (top),
+            # so crossing is detected correctly on the very next frame.
+            prev_cy = self._id_to_prev_cy.get(tid, -1.0)
             self._id_to_prev_cy[tid] = cy
 
             tracks.append(
