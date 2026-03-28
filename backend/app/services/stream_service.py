@@ -181,13 +181,23 @@ class StreamService:
     def _worker(self, url: str) -> None:
         is_rtsp = str(url).lower().startswith("rtsp://")
 
-        # ── RTSP tuning: reduce buffering → less lag ───────────────────────────
+        # ── RTSP tuning: reduce buffering + proper HEVC handling ──────────────
         if is_rtsp:
-            cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
-            # Drop old buffered frames — key for live streams
+            # Use TCP transport (more reliable than UDP for HEVC)
+            # max_delay: reduce jitter buffer for live stream
+            # stimeout: socket timeout 5s to detect dead streams fast
+            rtsp_url = url
+            if "?" not in url and "rtsp_transport" not in url:
+                # Inject FFmpeg options via OpenCV environment
+                import os
+                os.environ.setdefault(
+                    "OPENCV_FFMPEG_CAPTURE_OPTIONS",
+                    "rtsp_transport;tcp|buffer_size;4096000|max_delay;500000|stimeout;5000000|fflags;nobuffer|flags;low_delay"
+                )
+            cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
+            # Minimize buffer to keep frames fresh
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-            # Request H.264 decode (avoid re-encode artifacts)
-            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'H264'))
+            # Do NOT force H264 fourcc — let FFmpeg auto-detect HEVC/H264
         else:
             cap = cv2.VideoCapture(url)
 

@@ -51,11 +51,14 @@ class YOLOModel:
         self._model = None
         self._model_path: str = ""
         self._class_names: dict[int, str] = {}
+        self._device = "cpu"
+        self._use_half = False
 
     # ── Public ────────────────────────────────────────────────────────────────
 
     def load(self, path: str | Path) -> None:
         from ultralytics import YOLO
+        import torch
 
         path = Path(path)
         if not path.exists():
@@ -63,6 +66,10 @@ class YOLOModel:
 
         self._model = YOLO(str(path))
         self._model_path = path.name
+
+        # Move to GPU if available
+        self._device = 0 if torch.cuda.is_available() else "cpu"
+        self._use_half = torch.cuda.is_available()  # FP16 on GPU only
 
         names = getattr(self._model, "names", {})
         if isinstance(names, dict):
@@ -80,7 +87,10 @@ class YOLOModel:
         if not self.is_loaded:
             return []
 
-        results = self._model(frame, verbose=False, conf=conf)[0]
+        results = self._model(
+            frame, verbose=False, conf=conf,
+            device=self._device, half=self._use_half, imgsz=640,
+        )[0]
         return self._parse_boxes(results)
 
     def track(
@@ -111,6 +121,9 @@ class YOLOModel:
             conf=conf,
             tracker=tracker,
             persist=persist,
+            device=self._device,
+            half=self._use_half,
+            imgsz=640,
         )[0]
         return self._parse_boxes(results)
 

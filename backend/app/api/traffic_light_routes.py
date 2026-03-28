@@ -79,8 +79,16 @@ async def rl_status():
 
 @router.post("/rl/train")
 async def rl_train(episodes: int = 200, cycles: int = 100):
-    """Train RL agent on traffic simulator."""
+    """Train DQN agent on internal simulator."""
     result = tls.train_rl(episodes=episodes, cycles=cycles)
+    return {"success": True, "stats": result}
+
+
+@router.post("/rl/train-sumo")
+async def rl_train_sumo(epochs: int = 50, steps: int = 500,
+                        config_path: str = "configuration.sumocfg"):
+    """Train DQN agent on SUMO (if installed)."""
+    result = tls.train_rl_sumo(config_path=config_path, epochs=epochs, steps=steps)
     return {"success": True, "stats": result}
 
 

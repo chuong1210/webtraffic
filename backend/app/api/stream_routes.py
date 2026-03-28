@@ -77,19 +77,25 @@ async def stream_thumbnail(url: Annotated[str, Query(description="RTSP or video 
 def _grab_thumbnail(url: str) -> dict:
     """Synchronous: open stream, grab 1 frame, close immediately."""
     try:
+        import os
+        os.environ.setdefault(
+            "OPENCV_FFMPEG_CAPTURE_OPTIONS",
+            "rtsp_transport;tcp|buffer_size;4096000|max_delay;500000|stimeout;5000000|fflags;nobuffer|flags;low_delay"
+        )
         cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 6000)
-        cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 6000)
+        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 8000)
+        cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 8000)
 
         if not cap.isOpened():
             return {"ok": False, "frame": None, "error": "Cannot open stream"}
 
-        # Grab up to 5 frames to skip initial black/green frames
+        # Skip 10 frames — HEVC needs reference frames to decode cleanly
+        # (avoids "PPS out of range" artifacts in first few frames)
         frame: cv2.typing.MatLike | None = None
-        for _ in range(5):
+        for i in range(15):
             ret, f = cap.read()
-            if ret and f is not None:
+            if ret and f is not None and i >= 8:
                 frame = f
                 break
 

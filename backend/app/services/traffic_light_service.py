@@ -28,9 +28,9 @@ from app.models.traffic_light_model import (
     RLStatus, GAStatus, SimulationResult,
 )
 from app.ml.traffic_light.fuzzy_controller import FuzzyController
-from app.ml.traffic_light.rl_agent import RLAgent, RLExperience, ACTION_DURATIONS
+from app.ml.traffic_light.rl_agent import RLAgent, RLExperience, ACTION_DURATIONS, HAS_TORCH
 from app.ml.traffic_light.genetic_optimizer import GeneticOptimizer, GAConfig
-from app.ml.traffic_light.simulator import TrafficSimulator
+from app.ml.traffic_light.simulator import TrafficSimulator, HAS_SUMO
 
 
 # Paths for persistence
@@ -144,6 +144,13 @@ class TrafficLightService:
         q = sum(self._queue_lengths)
         w = max(self._wait_times)
 
+        # Build continuous state vector for DQN
+        q0 = self._queue_lengths[phase]
+        q1 = self._queue_lengths[1 - phase]
+        w0 = self._wait_times[phase]
+        w1 = self._wait_times[1 - phase]
+        state_vec = self._rl.make_state_vec(q0, q1, w0, w1, phase)
+
         if self._mode == "manual":
             green_time = 30.0
             method = "manual"
@@ -151,19 +158,16 @@ class TrafficLightService:
             green_time = self._fuzzy.decide(queue_length=q, waiting_time=w)
             method = "fuzzy"
         elif self._mode == "rl":
-            state = self._rl.make_state(q, w, phase)
-            action = self._rl.select_action(state)
+            action = self._rl.select_action(state_vec)
             green_time = float(self._rl.get_green_time(action))
-            self._do_rl_learn(state.to_tuple(), action, q, w)
+            self._do_rl_learn(state_vec, action, q, w)
             method = "rl"
         else:  # auto
-            state = self._rl.make_state(q, w, phase)
-            action = self._rl.select_action(state)
+            action = self._rl.select_action(state_vec)
             rl_green = float(self._rl.get_green_time(action))
             fuzzy_green = self._fuzzy.decide(queue_length=q, waiting_time=w)
-            # Blend: 70% RL + 30% Fuzzy (safety net)
             green_time = 0.7 * rl_green + 0.3 * fuzzy_green
-            self._do_rl_learn(state.to_tuple(), action, q, w)
+            self._do_rl_learn(state_vec, action, q, w)
             method = "auto"
 
         green_time = round(max(10, min(70, green_time)), 1)
@@ -190,8 +194,8 @@ class TrafficLightService:
         self._state.active_phase = 1 - self._state.active_phase
         self._state.cycle_count += 1
 
-    def _do_rl_learn(self, state: tuple, action: int, q: float, w: float) -> None:
-        """Perform one Q-learning update from the previous step."""
+    def _do_rl_learn(self, state_vec, action: int, q: float, w: float) -> None:
+        """Perform one DQN update from the previous step."""
         if self._prev_rl_state is not None and self._prev_rl_action is not None:
             reward = RLAgent.compute_reward(
                 avg_wait=w,
@@ -203,12 +207,12 @@ class TrafficLightService:
                 state=self._prev_rl_state,
                 action=self._prev_rl_action,
                 reward=reward,
-                next_state=state,
+                next_state=state_vec,
             )
             self._rl.update(exp)
             self._episode_reward += reward
 
-        self._prev_rl_state = state
+        self._prev_rl_state = state_vec
         self._prev_rl_action = action
 
     # ── Simulation ───────────────────────────────────────────────────────────
@@ -234,11 +238,13 @@ class TrafficLightService:
                     return self._fuzzy.decide(obs["total_queue"], obs["avg_wait"])
             elif mode == "rl":
                 def policy(obs):
-                    s = self._rl.make_state(obs["total_queue"], obs["avg_wait"], obs["phase"])
-                    a = self._rl.select_action(s)
+                    sv = self._rl.make_state_vec(
+                        obs["queue_green"], obs["queue_red"],
+                        obs["wait_green"], obs["wait_red"], obs["phase"])
+                    a = self._rl.best_action(sv)
                     return float(self._rl.get_green_time(a))
             else:  # fixed
-                def policy(obs):
+                def policy(obs):  # noqa: ARG001
                     return fixed_green
 
             result = sim.run_episode(policy, max_cycles=cycles, seed=ep)
@@ -260,20 +266,30 @@ class TrafficLightService:
     # ── RL Training ──────────────────────────────────────────────────────────
 
     def train_rl(self, episodes: int = 200, cycles: int = 100) -> dict:
-        """Train RL agent on simulator."""
+        """Train DQN agent on realistic simulator."""
         sim = TrafficSimulator()
+        logger.info("RL training: %d episodes × %d cycles (backend: %s)",
+                     episodes, cycles, "DQN" if self._rl._use_dqn else "Q-table")
 
         for ep in range(episodes):
             sim.reset(seed=ep)
             ep_reward = 0.0
-            prev_state = None
+            prev_state_vec = None
             prev_action = None
 
             for _ in range(cycles):
                 obs = sim.get_obs()
-                state = self._rl.make_state(obs["total_queue"], obs["avg_wait"], obs["phase"])
 
-                action = self._rl.select_action(state)
+                # Continuous state vector for DQN
+                state_vec = self._rl.make_state_vec(
+                    queue_green=obs["queue_green"],
+                    queue_red=obs["queue_red"],
+                    wait_green=obs["wait_green"],
+                    wait_red=obs["wait_red"],
+                    phase=obs["phase"],
+                )
+
+                action = self._rl.select_action(state_vec)
                 green_time = float(self._rl.get_green_time(action))
                 info = sim.step(green_time, switch_phase=True)
 
@@ -284,20 +300,43 @@ class TrafficLightService:
                     throughput=info["cleared"],
                 )
 
-                if prev_state is not None:
+                if prev_state_vec is not None:
                     exp = RLExperience(
-                        state=prev_state,
+                        state=prev_state_vec,
                         action=prev_action,
                         reward=reward,
-                        next_state=state.to_tuple(),
+                        next_state=state_vec,
                     )
                     self._rl.update(exp)
 
-                prev_state = state.to_tuple()
+                prev_state_vec = state_vec
                 prev_action = action
                 ep_reward += reward
 
             self._rl.end_episode(ep_reward)
+
+            if (ep + 1) % 50 == 0:
+                logger.info("RL train: ep %d/%d, avg_reward=%.2f, eps=%.3f",
+                            ep + 1, episodes, self._rl.avg_reward, self._rl.epsilon)
+
+        self._save_state()
+        return self._rl.get_q_table_stats()
+
+    def train_rl_sumo(self, config_path: str = "configuration.sumocfg",
+                      epochs: int = 50, steps: int = 500) -> dict:
+        """Train DQN agent on SUMO simulator (if available)."""
+        if not HAS_SUMO:
+            logger.warning("SUMO not available, falling back to internal simulator")
+            return self.train_rl(episodes=epochs, cycles=steps // 5)
+
+        from app.ml.traffic_light.simulator import SUMOSimulator
+        sumo_sim = SUMOSimulator(config_path=config_path, gui=False)
+
+        for epoch in range(epochs):
+            result = sumo_sim.run_episode(self._rl, steps=steps)
+            self._rl.end_episode(-result["total_wait"])
+            logger.info("SUMO train: epoch %d/%d, total_wait=%.0f, eps=%.3f",
+                        epoch + 1, epochs, result["total_wait"], self._rl.epsilon)
 
         self._save_state()
         return self._rl.get_q_table_stats()
