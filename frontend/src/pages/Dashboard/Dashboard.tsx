@@ -283,7 +283,35 @@ export function Dashboard() {
                 selectedUrl={streamUrl}
                 activeUrl={streamUrl}
                 onSelect={setStreamUrl}
-                onConnect={(url) => { setStreamUrl(url); setTimeout(handleConnect, 50); }}
+                onConnect={async (url) => {
+                  if (!url.trim()) return;
+                  setStreamUrl(url);
+                  setConnecting(true);
+                  try {
+                    // Disconnect stream cũ trước
+                    if (streamOn) {
+                      await stopStream();
+                      setStreamOn(false);
+                      await new Promise(r => setTimeout(r, 500)); // chờ backend stop
+                    }
+                    await startStream(url);
+                    setStreamOn(true);
+                    addToast(`Dang ket noi: ${url.split('/').pop()}`, 'info');
+                    const deadline = Date.now() + 25000;
+                    const t = setInterval(async () => {
+                      if (Date.now() > deadline) { clearInterval(t); setStreamOn(false); addToast('Timeout ket noi', 'error'); return; }
+                      try {
+                        const status = await streamApi.getStatus();
+                        if (status.active) clearInterval(t);
+                        else if (status.error) { clearInterval(t); setStreamOn(false); addToast(status.error, 'error'); }
+                      } catch { /* ignore */ }
+                    }, 1500);
+                  } catch (e: any) {
+                    addToast(e.message || 'Khong the ket noi', 'error');
+                  } finally {
+                    setConnecting(false);
+                  }
+                }}
                 streamOn={streamOn}
                 connecting={connecting}
               />
@@ -458,17 +486,17 @@ export function Dashboard() {
                 active={roiActive}
               />
 
-              {/* Congestion floating pill – bồng bềnh trên video */}
+              {/* Congestion floating pill – fixed giữa màn hình, luôn thấy */}
               {congestion && congestion.is_congested && (
                 <div className={`
-                  absolute bottom-5 left-1/2 -translate-x-1/2 z-20
-                  flex items-center gap-2 px-4 py-2 rounded-full
+                  fixed bottom-6 left-1/2 -translate-x-1/2 z-50
+                  flex items-center gap-2 px-5 py-2.5 rounded-full
                   shadow-2xl border backdrop-blur-sm
                   text-sm font-bold pointer-events-none select-none
                   animate-bounce
                   ${congestion.level === 'critical'
-                    ? 'bg-red-600/90 border-red-400 text-white'
-                    : 'bg-amber-500/90 border-amber-300 text-white'}
+                    ? 'bg-red-600/95 border-red-400 text-white'
+                    : 'bg-amber-500/95 border-amber-300 text-white'}
                 `}>
                   <span>{congestion.level === 'critical' ? '🚨' : '⚠️'}</span>
                   <span>

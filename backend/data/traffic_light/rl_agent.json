@@ -2,8 +2,8 @@
   "lr": 0.001,
   "gamma": 0.99,
   "epsilon": 0.05,
-  "total_steps": 19818,
-  "total_episodes": 202,
-  "avg_reward": -13063.08393380624,
+  "total_steps": 39618,
+  "total_episodes": 402,
+  "avg_reward": -11231.853677865356,
   "use_dqn": true
 }

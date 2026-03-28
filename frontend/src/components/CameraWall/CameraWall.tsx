@@ -85,7 +85,7 @@ export function CameraWall({ cameras, selectedUrl, activeUrl, onSelect, onConnec
               key={cam.id}
               type="button"
               onClick={() => onSelect(cam.url)}
-              onDoubleClick={() => !streamOn && onConnect(cam.url)}
+              onDoubleClick={() => onConnect(cam.url)}
               title={`${cam.label}\n${cam.url}\nDouble-click to connect`}
               className={`relative flex flex-col rounded-xl overflow-hidden border-2 transition-all text-left cursor-pointer focus:outline-none ${
                 isActive
